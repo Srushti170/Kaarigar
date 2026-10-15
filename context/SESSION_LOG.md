@@ -173,3 +173,7 @@ Format: `## YYYY-MM-DD HH:MM IST · <session id first 8> · <short title>`, foll
 - Build passes; commit 384cf3e.
 
 - 2026-10-15 15:00: Session 84126829. Logo image in all top bars; added the first-login Tour (Tour.jsx, hi/mr/en, voice); simplified the Home confirmed card to the Booked summary + send a mate. Commit 7cce425.
+
+- 2026-10-15 15:25: Session 84126829. Built the full employer side (Home, Find, WorkerProfile, Book + bayana, Bookings, Register/certificates) per SOLUTION §4. Commit c2eec62.
+
+- 2026-10-15 15:15: Session 5fefcf0a. App wasn't loading: a half-done payWhen removal had broken data/index.js + store.jsx; restored those lines. Full browser test of worker + employer flows passed; fixed tour scroll, carried the job choice into booking, fair default pay. Commit 977f179.

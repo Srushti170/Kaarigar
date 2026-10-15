@@ -1,8 +1,33 @@
 # HANDOFF: current state
 
-_Last updated: 2026-10-15 15:00 IST by session 84126829 (hackathon day)._
+_Last updated: 2026-10-15 15:15 IST by session 5fefcf0a (hackathon day)._
 
 ## Status
+**15:15: APP WAS BROKEN, NOW FIXED AND BROWSER-TESTED** (commit 977f179).
+- **Cause:** a half-finished, uncommitted edit (from another chat) had removed `payWhen` lines in `src/data/index.js` and `src/lib/store.jsx`, leaving syntax errors, so the app didn't load.
+  - Repaired by restoring only those lines to the committed version. The broken copies were saved in the session scratchpad.
+  - **If someone wants `payWhen` gone, remove the field cleanly (whole line), then run `node scripts/check.mjs`.**
+- **Tested in the browser (dev server on :5174 because :5173 was taken):**
+  - Worker as Ramesh: login, home, the 4-step tour, job, booked, paisa, passport, toli, suraksha, haq, khaali din, report, verify.
+  - Employer as Meera: home, picture → find → profile → book → bayana → nishaan + society pass; bookings (mark paid, backup approve, Hisaab Lock pay now, past/rehire); register + certificate; toli booking; naka filter.
+  - The desktop phone frame loads too. The only console error is a missing favicon.
+- **Fixes made:**
+  - The tour now scrolls instantly so its spotlight is always on screen.
+  - The picture/trade choice is carried through profile into Book.
+  - Booking pay now defaults to at least the legal minimum, and it updates when the trade changes.
+
+**15:25: EMPLOYER PLATFORM BUILT** (commit c2eec62; the user asked for it, which reverses the 13:25 "worker only" scope). Bundle check and build pass; not browser-tested (the user said skip testing).
+- **Routes:**
+  - `/employer` Home: greeting, Bharosemand badge + record, Hisaab Lock banner, "needs you" card, the "What's the job?" picture grid (PROBLEMS → find with the trade), upcoming bookings, one-tap rehire, Naka map, book a whole toli, pledge.
+  - `/employer/find`: trade chips, naka filter, FairRate, tolis first, then WorkerCards (facts only, no stars).
+  - `/employer/worker/:id`: stats, voice intro, skills, 90-day ring, toli, passport link, Book.
+  - `/employer/book?worker=|toli=&trade=&problem=`: terms form with a below-minimum ⚠, pledge required, a ₹100 bayana sheet per person (mock UPI), then the success view with Nishaan + Society pass.
+  - `/employer/bookings`: approve or decline a backup, Hisaab Lock "Pay now" (settleDispute), Mark paid sheet (UPI/cash), pass, cancel, rehire prompt.
+  - `/employer/register`: auto wage register table + CSV download, 90-day certificates.
+- Shared pieces live in `src/pages/employer/_kit.jsx`. `EmployerShell` now has a 4-tab bottom nav with a to-do badge, and `useEmployer` now follows the logged-in user.
+- Everything goes through the shared store, so an employer booking reaches the worker's OfferCard.
+- **Note:** another session had uncommitted edits in `src/data/index.js` and `src/lib/store.jsx`. They were left alone and not committed.
+
 **15:00: LOGO IN TOP BARS + FIRST-LOGIN TOUR + COMPACT CONFIRMED CARD** (commit 7cce425; not browser-tested at the user's request, but the bundle check and build pass).
 - The header now shows `LogoArt` (h-12) in place of the text Wordmark: WorkerShell, EmployerShell, auth, Welcome, Verify.
 - **`src/components/Tour.jsx`**: a 4-step spotlight tour (welcome, first job card `data-tour="job"`, mic `data-tour="mic"` in the nav, tap a job). It's trilingual and read aloud on each step. It shows once per worker (`karigar-tour-<id>`, cleared by Demo reset) and is mounted in Home.
