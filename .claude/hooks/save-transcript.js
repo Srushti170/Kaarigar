@@ -1,0 +1,229 @@
+#!/usr/bin/env node
+// Exports the current Claude Code conversation to readable markdown in
+// context/transcripts/, so any Claude account opened in this folder can
+// pick up where the last one left off.
+//
+// Runs automatically as a Stop / PreCompact / SessionEnd hook (reads the hook
+// JSON on stdin). Can also be run by hand:
+//   node .claude/hooks/save-transcript.js <path-to-transcript.jsonl>
+
+const fs = require("fs");
+const path = require("path");
+
+const PROJECT_DIR = path.resolve(__dirname, "..", "..");
+const OUT_DIR = path.join(PROJECT_DIR, "context", "transcripts");
+const INDEX_JSON = path.join(OUT_DIR, "index.json");
+const INDEX_MD = path.join(OUT_DIR, "INDEX.md");
+
+function readStdin() {
+  try {
+    if (process.stdin.isTTY) return "";
+    return fs.readFileSync(0, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function clean(text) {
+  return String(text)
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "")
+    .replace(
+      /<pasted_content[^>]*>([\s\S]*?)<\/pasted_content[^>]*>/g,
+      (_, inner) =>
+        "\n**Pasted content:**\n\n" +
+        inner
+          .trim()
+          .split("\n")
+          .map((l) => "> " + l)
+          .join("\n") +
+        "\n"
+    )
+    .trim();
+}
+
+function toolSummary(name, input = {}) {
+  const pick =
+    input.description ||
+    input.file_path ||
+    input.path ||
+    input.command ||
+    input.pattern ||
+    input.url ||
+    input.skill ||
+    input.title ||
+    input.prompt ||
+    "";
+  const one = String(pick).replace(/\s+/g, " ").trim();
+  return one.length > 140 ? one.slice(0, 137) + "..." : one;
+}
+
+function resultText(block) {
+  const c = block.content;
+  if (typeof c === "string") return c;
+  if (Array.isArray(c))
+    return c
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("\n");
+  return "";
+}
+
+function fmtTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  if (isNaN(d)) return "";
+  return d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function render(transcriptPath, sessionId) {
+  const lines = fs.readFileSync(transcriptPath, "utf8").split("\n");
+  const askIds = new Set();
+  const out = [];
+  let lastRole = null;
+  let firstPrompt = "";
+  let firstTs = null;
+  let lastTs = null;
+  let turns = 0;
+
+  const header = (role, ts) => {
+    if (lastRole === role) return;
+    lastRole = role;
+    out.push("", role === "user" ? `### 🧑 User · ${fmtTime(ts)}` : `### 🤖 Claude`, "");
+  };
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    let o;
+    try {
+      o = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (o.type !== "user" && o.type !== "assistant") continue;
+    if (o.isSidechain || o.isMeta) continue;
+    if (o.timestamp) {
+      firstTs = firstTs || o.timestamp;
+      lastTs = o.timestamp;
+    }
+    const content = o.message && o.message.content;
+    if (content == null) continue;
+
+    if (o.type === "user") {
+      const blocks = typeof content === "string" ? [{ type: "text", text: content }] : content;
+      for (const b of blocks) {
+        if (b.type === "text") {
+          const t = clean(b.text);
+          if (!t) continue;
+          header("user", o.timestamp);
+          out.push(t, "");
+          turns++;
+          if (!firstPrompt) firstPrompt = t.replace(/\*\*Pasted content:\*\*[\s\S]*?(\n\n|$)/, "").replace(/^>.*$/gm, "").replace(/\s+/g, " ").trim();
+        } else if (b.type === "tool_result" && askIds.has(b.tool_use_id)) {
+          const t = clean(resultText(b)).replace(/\s*Read the answers carefully[^\n]*$/, "");
+          if (!t) continue;
+          header("user", o.timestamp);
+          out.push("**Answers:**", "", "> " + t.split("\n").join("\n> "), "");
+        }
+      }
+    } else {
+      const blocks = typeof content === "string" ? [{ type: "text", text: content }] : content;
+      for (const b of blocks) {
+        if (b.type === "text") {
+          const t = clean(b.text);
+          if (!t) continue;
+          header("assistant");
+          out.push(t, "");
+        } else if (b.type === "tool_use") {
+          header("assistant");
+          if (b.name === "AskUserQuestion") {
+            askIds.add(b.id);
+            const qs = (b.input && b.input.questions) || [];
+            out.push("", "**Asked the user:**", "");
+            for (const q of qs) {
+              const opts = (q.options || []).map((x) => x.label).join(" / ");
+              out.push(`- ${q.question}${opts ? `  _(options: ${opts})_` : ""}`);
+            }
+            out.push("");
+          } else {
+            const s = toolSummary(b.name, b.input);
+            out.push(`- 🔧 \`${b.name}\`${s ? ` — ${s}` : ""}`);
+          }
+        }
+      }
+    }
+  }
+
+  const md = [
+    `# Conversation ${sessionId.slice(0, 8)}`,
+    "",
+    `- **Session ID:** ${sessionId}`,
+    `- **Started:** ${fmtTime(firstTs)}`,
+    `- **Last updated:** ${fmtTime(lastTs)}`,
+    `- **Source:** \`${transcriptPath}\``,
+    "",
+    "> Auto-generated by `.claude/hooks/save-transcript.js` after every Claude reply.",
+    "> Tool calls are summarised to one line; tool output and thinking are omitted.",
+    "",
+    "---",
+    ...out,
+  ].join("\n");
+
+  return { md, firstPrompt, firstTs, lastTs, turns };
+}
+
+function main() {
+  const raw = readStdin();
+  let input = {};
+  try {
+    input = raw ? JSON.parse(raw) : {};
+  } catch {}
+  const transcriptPath = process.argv[2] || input.transcript_path;
+  if (!transcriptPath || !fs.existsSync(transcriptPath)) return;
+  const sessionId = input.session_id || path.basename(transcriptPath, ".jsonl");
+
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  let index = {};
+  try {
+    index = JSON.parse(fs.readFileSync(INDEX_JSON, "utf8"));
+  } catch {}
+
+  const { md, firstPrompt, firstTs, lastTs, turns } = render(transcriptPath, sessionId);
+  const datePart = (firstTs ? new Date(firstTs) : new Date()).toISOString().slice(0, 10);
+  const file = (index[sessionId] && index[sessionId].file) || `${datePart}_${sessionId.slice(0, 8)}.md`;
+  fs.writeFileSync(path.join(OUT_DIR, file), md, "utf8");
+
+  index[sessionId] = {
+    file,
+    started: firstTs,
+    updated: lastTs || new Date().toISOString(),
+    turns,
+    firstPrompt: firstPrompt.slice(0, 120),
+  };
+  fs.writeFileSync(INDEX_JSON, JSON.stringify(index, null, 2), "utf8");
+
+  const rows = Object.entries(index)
+    .sort((a, b) => String(b[1].updated).localeCompare(String(a[1].updated)))
+    .map(([id, e]) => `| ${fmtTime(e.updated)} | [${e.file}](${e.file}) | ${e.turns} | ${String(e.firstPrompt || "").replace(/\|/g, "\\|")} |`);
+  fs.writeFileSync(
+    INDEX_MD,
+    [
+      "# Conversation transcripts (newest first)",
+      "",
+      "Every Claude session in this workspace, from any account, is saved here automatically.",
+      "",
+      "| Last updated | File | User msgs | Started with |",
+      "|---|---|---|---|",
+      ...rows,
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+}
+
+try {
+  main();
+} catch (e) {
+  // Never block Claude because the log failed; just note it on stderr.
+  process.stderr.write("save-transcript: " + (e && e.message) + "\n");
+}
+process.exit(0);

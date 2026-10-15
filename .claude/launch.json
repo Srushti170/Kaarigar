@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "D:/Hackathons/Artemis/app"],
+      "port": 5173
+    },
+    {
+      "name": "app-next",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "D:/Hackathons/Artemis/app"],
+      "port": 3000
+    },
+    {
+      "name": "starter-react-js",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "D:/Hackathons/Artemis/starters/react-js"],
+      "port": 5173
+    }
+  ]
+}
